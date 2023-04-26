@@ -7,6 +7,7 @@ const DB_URL: &str = "sqlite://sqlite.db";
 struct User {
     id: i64,
     name: String,
+    lastname: String,
     active: bool,
 }
 
@@ -62,9 +63,10 @@ async fn main() {
 
     let result = sqlx::query(
         "INSERT INTO users 
-        (name) VALUES (?)"
+        (name, lastname) VALUES (?, ?)"
     )
         .bind("Bobby")
+        .bind("Fisher")
         .execute(&db)
         .await
         .unwrap();
@@ -72,8 +74,7 @@ async fn main() {
     println!("Query result: {:?}", result);
 
     let user_results = sqlx::query_as::<_, User>(
-        "SELECT id,
-        name,
+        "SELECT id,name, lastname,
         active FROM users"
     )
         .fetch_all(&db)
@@ -81,7 +82,7 @@ async fn main() {
         .unwrap();
 
     for user in user_results {
-        println!("{} name: {}, active: {}", user.id, &user.name, user.active);
+        println!("{} name: {}, lastname: {}, active: {}", user.id, &user.name, &user.lastname , user.active);
     } 
 
     let delete_result = sqlx::query(

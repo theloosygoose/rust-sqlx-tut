@@ -1,45 +1,62 @@
-use sqlx::{migrate::MigrateDatabase, FromRow, Row, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, FromRow, Sqlite, SqlitePool};
 
-const DB_URL: &str = "sqlite://sqlite.db";
+const DB_URL: &str = "sqlite://saves/save_01.db";
 
+use serde::{Serialize, Deserialize};
+
+
+#[derive(Clone, FromRow, Debug, Serialize, Deserialize)]
+pub struct Personality {
+    pub work_ethic: u16,
+    pub dog: u16,
+    pub loyalty: u16,
+}
 
 #[derive(Clone, FromRow, Debug, Serialize)]
-pub struct Personality {
-    work_ethic: u16,
-    dog: u16,
+pub struct InsertPlayer {
+    pub name: String,
+    pub active: bool,
+    pub player_id: String,
 
     #[serde(flatten)]
-    loyalty: u16,
+    pub personality: Personality,
 }
 
-#[derive(Clone, FromRow, Debug, Serialize)]
-struct Player {
-    id: i64,
-    name: String,
-    active: bool,
-    personality: Personality,
+#[derive(Clone, FromRow, Debug, Serialize, Deserialize)]
+pub struct GetPlayer {
+    pub name: String,
+    pub active: bool,
+    pub player_id: String,
+
+    #[sqlx(flatten)]
+    pub personality: Personality,
 }
+
 
 #[tokio::main]
 pub async fn create_game() {
+    //CHECKS FOR SAVEGAME IF NONE EXISTS THEN CREATE ONE 
+    //IF EXISTS READ THE SAVE
     
     if !Sqlite::database_exists(DB_URL).await.unwrap_or(false) {
-        println!("Creating Database {}", DB_URL);
+        println!("Creating savefile {}", DB_URL);
 
         match Sqlite::create_database(DB_URL).await {
-            Ok(_) => println!("Create db success"),
-            Err(error) => panic!("Error !!! {}", error),
+            Ok(_) => println!("Create savefile success"),
+            Err(error) => panic!("Error creating savefile !!! {}", error),
         }
     } else {
-        println!("Database already exists");
+        println!("Save already exists");
     }
 
+    //Then Connect to the database via pool
     let db = SqlitePool::connect(DB_URL).await.unwrap();
 
+    //Gets root dir of application and migrations file
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-
     let migrations = std::path::Path::new(&crate_dir).join("./migrations");
 
+    //Get migrations
     let migration_results = sqlx::migrate::Migrator::new(migrations)
         .await
         .unwrap()
@@ -52,66 +69,48 @@ pub async fn create_game() {
             panic!("Error In Migration: {}", error);
         }
     }
-
     println!("migration: {:?}", migration_results);
 
-    let result = sqlx::query(
-        "SELECT name
-        FROM sqlite_schema
-        WHERE type = 'table'
-        AND name NOT LIKE 'sqlite_%';",
-    )
-        .fetch_all(&db)
-        .await
-        .unwrap();
-
-    for (idx, row) in result.iter().enumerate() {
-        println!("{}: {:?}", idx, row.get::<String, &str>("name"));
-    }
-
-    let user = User {
-        id: 1,
+    //Create a player to insert into the databse 
+    let player_01 = InsertPlayer{
         name: "Joel".to_string(),
-        lastname: "McDougal".to_string(),
         active: true,
-        
+        player_id: "joel20023".to_string(),
+        personality: Personality { 
+            work_ethic: 22, 
+            dog: 50, 
+            loyalty: 99 
+        }
     };
 
+    println!("Attempting to insert into savefile {:#?}", player_01);
     
 
     let result = sqlx::query(
-        "INSERT INTO users 
-        (name, lastname) VALUES (?, ?)"
+        "INSERT INTO players 
+        (name,player_id,active,work_ethic,dog,loyalty) VALUES (?, ?, ?, ?, ?, ?)"
     )
-        .bind(user.name)
-        .bind(user.lastname)
+        .bind(player_01.name)
+        .bind(player_01.player_id)
+        .bind(player_01.active)
+        .bind(player_01.personality.work_ethic)
+        .bind(player_01.personality.dog)
+        .bind(player_01.personality.loyalty)
         .execute(&db)
         .await
         .unwrap();
-
+    
     println!("Query result: {:?}", result);
 
-    let user_results = sqlx::query_as::<_, User>(
-        "SELECT id,name, lastname,
-        active FROM users"
+    let players_results = sqlx::query_as::<_, GetPlayer>(
+        "SELECT id, player_id, name, active, work_ethic, dog, loyalty FROM players"
     )
         .fetch_all(&db)
         .await
         .unwrap();
-
-    for user in user_results {
-        println!("{} name: {}, lastname: {}, active: {}", user.id, &user.name, &user.lastname , user.active);
+    
+    for player in players_results {
+        println!("name: {}, personality: {:#?}, active: {}", &player.name, &player.personality, player.active);
     } 
 
-    let delete_result = sqlx::query(
-        "DELETE FROM users 
-        WHERE name=$1"
-    )
-        .bind("bobby")
-        .execute(&db)
-        .await
-        .unwrap();
-
-    println!("Delete result: {:?}", delete_result);
-    
 }
